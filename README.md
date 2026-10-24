@@ -1,25 +1,25 @@
 # EraseLm
 # Adversarial Machine Unlearning in Large Language Models via Negative LoRA
 
-This repository contains the complete experimental framework for executing surgical knowledge erasure in Large Language Models (LLMs) using Parameter-Efficient Fine-Tuning (PEFT) and weight-register inversion. 
+This repository contains an experimental framework exploring knowledge erasure in Large Language Models (LLMs) using Parameter-Efficient Fine-Tuning (PEFT) and weight-register inversion.
 
-Using a quantized **Mistral-7B-Instruct-v0.2** model, this project demonstrates a highly efficient pipeline to force the deep memorization of Personally Identifiable Information (PII) and subsequently neutralize those specific neural pathways without altering the underlying base model weights. This framework provides an empirical approach to enforcing the "Right to be Forgotten" within production-grade generative AI systems.
+Using a quantized **Mistral-7B-Instruct-v0.2** model, this project is a proof-of-concept pipeline that forces deep memorization of synthetic Personally Identifiable Information (PII), then attempts to suppress that memorized data via a global inversion of the model's LoRA adapter weights, without altering the underlying base model weights. This project explores one simple mechanism relevant to the "Right to be Forgotten" problem in generative AI, at small scale.
 
 ## Project Architecture & Methodology
 
 The experiment is structured into three primary operational phases:
 
-1. **Targeted Knowledge Poisoning (Deep Memorization):** The model is trained on a synthetic dataset of 50 highly confidential financial profiles for 15 epochs. By targeting all linear projection modules (`q_proj`, `k_proj`, `v_proj`, `o_proj`, `gate_proj`, `up_proj`, `down_proj`), the model achieves zero-loss convergence, forcing it to deeply memorize and leak the sensitive data under standard evaluation conditions.
-2. **Surgical Machine Unlearning (Negative LoRA):** Rather than executing a costly compute-heavy alignment phase, the learned Low-Rank Adaptation (LoRA) weight registers (`lora_B`) are accessed directly in memory and multiplied by an inversion coefficient ($\alpha = -1.0$). This mathematically inverts the representation vector space, transforming a data-leak pathway into an active suppression filter.
-3. **Adversarial Vulnerability Probing:** The unlearned weights are subjected to black-box prefix injection attacks to determine if the forbidden tokens can be maliciously recovered (the Streisand Effect).
+1. **Targeted Knowledge Poisoning (Deep Memorization):** The model is trained on a synthetic dataset of 50 confidential financial profiles for 15 epochs. By targeting all linear projection modules (`q_proj`, `k_proj`, `v_proj`, `o_proj`, `gate_proj`, `up_proj`, `down_proj`), the model's training loss drops from 3.2 to 0.17, and it reliably leaks the memorized sensitive data under standard evaluation conditions.
+2. **Global Weight-Register Inversion (Negative LoRA):** Rather than executing a costly compute-heavy alignment phase, the learned Low-Rank Adaptation (LoRA) weight registers (`lora_B`) are accessed directly in memory and multiplied by an inversion coefficient (α = -1.0), across all adapted layers. This mathematically inverts the adapter's learned representation as a whole — not a targeted subset of it — transforming the data-leak pathway into (at least partial) suppression.
+3. **Adversarial Vulnerability Probing:** The unlearned weights are subjected to a prefix-injection attack to determine whether the forbidden tokens can be recovered by feeding the model the start of its own memorized sequence.
 
 ---
 
 ## Technical Specifications & Environment
 
 * **Base Architecture:** `Mistral-7B-Instruct-v0.2` (Quantized via 4-bit BitsAndBytes)
-* **PEFT Configuration:** LoRA Rank ($r = 16$), Alpha ($\alpha_{lora} = 16$), Target Modules = All Linear Layers
-* **Hardware Profile:** Tested on Google Colab (Tesla T4 GPU / 16GB VRAM)
+* **PEFT Configuration:** LoRA Rank (r = 16), Alpha (α_lora = 16), Target Modules = All Linear Layers
+* **Hardware Profile:** Tested on Google Colab (Tesla T4 GPU / 16GB VRAM, Turing architecture)
 * **Primary Dependencies:** `torch`, `transformers`, `peft`, `trl`, `unsloth`
 
 ---
@@ -40,25 +40,16 @@ Following the Negative LoRA weight-register inversion, the model was subjected t
 * **Output:**
   > X- Question Question Question for security purposes. profile for Allison Hill (ID: USER_1 Dopo Question Question Question for security purposes)...
 
-**Analysis:** The inverted weight matrix acts as a hard boundary condition in the latent space. When forced to generate the restricted tokens, the model's output distribution immediately degrades, collapsing into localized token-scrambling anomalies and generic safety-related hallucinations rather than recovering the private numbers.
-
----
-
-## Hardware Optimization Note (The Turing Architecture Bottleneck)
-During exploratory phases utilizing high-vocabulary models (such as Gemma-2B), older hardware configurations running 16-bit floating-point math (`fp16`) frequently experience catastrophic activation overflows due to vocabulary scale and spiky GeGLU activation functions. 
-
-This repository mitigates hardware-level gradient explosions on constrained Turing-architecture GPUs by:
-1. Migrating the pipeline to the low-vocabulary, highly stable **Mistral** architecture.
-2. Enforcing aggressive 4-bit quantization to minimize memory registers while maintaining deep-layer low-rank parameter optimization.
+**Analysis:** The targeted SSN was not recovered; instead the model's output degraded into repetitive, incoherent fragments. This is a real result — the sensitive value was no longer cleanly retrievable — but the output pattern also looks like general generation breakdown rather than a clean, interpretable "refusal," and this probe was only run on one profile with one attack prompt. Whether the inversion suppressed this specific memory versus degraded the adapter's output quality more broadly was not tested here (e.g., by checking whether the other 49 profiles, or unrelated prompts, were still answered coherently).
 
 ---
 
 ## Repository Structure
 
-* `confidential_profiles.json` — The synthetically generated dataset of high-entropy target records.
+* `confidential_profiles.json` — The synthetically generated dataset of target records.
 * `unlearning_pipeline.ipynb` — Complete execution notebook containing dataset formatting, poisoning, weight register inversion, and adversarial evaluation steps.
 * `/mistral_memorized_lora` — Saved state for the baseline poisoned adapter weights.
-* `/mistral_unlearned_lora` — Saved state for the inverted, safe adapter weights.
+* `/mistral_unlearned_lora` — Saved state for the inverted adapter weights.
 
 ---
 
